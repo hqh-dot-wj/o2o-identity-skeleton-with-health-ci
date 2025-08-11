@@ -1,0 +1,12 @@
+{
+  "name": "o2o-identity-skeleton",
+  "private": true,
+  "packageManager": "pnpm@9",
+  "workspaces": [
+    "apps/*"
+  ],
+  "devDependencies": {
+    "@nestjs/cli": "^10.4.2",
+    "tsx": "^4.16.2"
+  }
+}
