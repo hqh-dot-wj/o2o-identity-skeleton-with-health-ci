@@ -1,0 +1,11 @@
+node_modules
+.pnpm-store
+dist
+coverage
+.env
+.env.*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+apps/api/prisma/*.db
