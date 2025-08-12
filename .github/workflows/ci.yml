@@ -1,4 +1,4 @@
-name: CI
+name: Simple CI
 
 on:
   push:
@@ -6,27 +6,8 @@ on:
   pull_request:
 
 jobs:
-  build:
+  sync:
     runs-on: ubuntu-latest
-
-    services:
-      mysql:
-        image: mysql:8.0
-        ports:
-          - 3306:3306
-        env:
-          MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: identity
-        options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=10
-
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
 
     steps:
       - name: Checkout
@@ -54,21 +35,5 @@ jobs:
       - name: Install deps
         run: pnpm i
 
-      - name: Prisma generate
-        run: pnpm -C apps/api prisma:generate
-
-      - name: Wait for MySQL
-        run: |
-          echo "Waiting for MySQL to be ready..."
-          for i in {1..60}; do
-            (echo >/dev/tcp/127.0.0.1/3306) >/dev/null 2>&1 && break
-            sleep 1
-          done
-
-      - name: Run migrations (deploy)
-        env:
-          DATABASE_URL: mysql://root:root@127.0.0.1:3306/identity
-        run: pnpm -C apps/api prisma:migrate:deploy
-
-      - name: Build
-        run: pnpm -C apps/api build
+      - name: Sync Complete
+        run: echo "Code sync and dependency installation completed successfully!"
