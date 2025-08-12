@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { PrismaClient, IdentityType } from '@prisma/client';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
@@ -32,6 +32,8 @@ export class AuthService {
   private prisma = new PrismaClient();
   /** Redis 客户端，用于存储刷新令牌 */
   private redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6380/0');
+  /** Logger */
+  private readonly logger = new Logger(AuthService.name);
 
   /** 注入 JWT 服务 */
   constructor(private readonly jwt: JwtService) {}
@@ -136,7 +138,7 @@ export class AuthService {
 
     // 根据传入的首选身份选择当前身份
     let current = preferred?.identityId
-      ? identities.find(i => i.id === preferred.identityId)
+      ? identities.find((i: any) => i.id === preferred.identityId)
       : identities[0];
     if (!current) current = identities[0];
 
@@ -146,7 +148,7 @@ export class AuthService {
       where: { userId, ...(tenantId ? { tenantId } : {}) },
       include: { role: { select: { key: true } } },
     });
-    const roles = [...new Set(memberships.map(m => m.role.key))]; // 提取角色列表
+    const roles = [...new Set(memberships.map((m: any) => m.role.key as string))]; // 提取角色列表
 
     return { current, identities, roles, tenantId };
   }
@@ -194,6 +196,68 @@ export class AuthService {
   }
 
   /**
+   * 发送手机验证码
+   */
+  async sendPhoneCode(phone: string) {
+    // 冷却检查，防止重复发送
+    const cooldownKey = `sms:sent:${phone}`;
+    if (await this.redis.get(cooldownKey)) {
+      throw new Error('Too many requests, please wait before requesting another code');
+    }
+
+    // 随机生成6位验证码并缓存
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    await this.redis.setex(`sms:code:${phone}`, 300, code); // 5分钟有效
+    await this.redis.setex(cooldownKey, 60, '1'); // 60秒冷却
+
+    const required = [
+      'ALIYUN_ACCESS_KEY_ID',
+      'ALIYUN_ACCESS_KEY_SECRET',
+      'ALIYUN_SMS_SIGN',
+      'ALIYUN_SMS_TEMPLATE',
+    ] as const;
+
+    for (const key of required) {
+      if (!process.env[key]) {
+        const msg = `Environment variable ${key} is not set`;
+        if (process.env.NODE_ENV === 'development') {
+          this.logger.warn(msg);
+        } else {
+          throw new Error(msg);
+        }
+      }
+    }
+
+    // 开发模式下直接输出验证码
+    if (process.env.NODE_ENV === 'development') {
+      this.logger.log(`Dev mode SMS code for ${phone}: ${code}`);
+      return;
+    }
+
+    // 调用阿里云短信服务（简化实现）
+    try {
+      const sign = process.env.ALIYUN_SMS_SIGN!;
+      const template = process.env.ALIYUN_SMS_TEMPLATE!;
+      const params = new URLSearchParams({
+        PhoneNumbers: phone,
+        SignName: sign,
+        TemplateCode: template,
+        TemplateParam: JSON.stringify({ code }),
+      });
+      const url = `https://dysmsapi.aliyuncs.com/?Action=SendSms&Version=2017-05-25&${params.toString()}`;
+      await new Promise((resolve, reject) => {
+        https
+          .get(url, res => {
+            res.on('data', () => {});
+            res.on('end', resolve);
+          })
+          .on('error', reject);
+      });
+    } catch (e) {
+      this.logger.error('Failed to send SMS', e as any);
+      throw e;
+    }
+   /**
    * 通过手机验证码登录或注册
    */
   async loginWithPhoneCode(phone: string, _code: string) {

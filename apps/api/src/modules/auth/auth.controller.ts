@@ -53,6 +53,12 @@ class WechatLoginDto {
   code!: string;
 }
 
+/** 发送手机验证码请求体 */
+class PhoneCodeDto {
+  /** 手机号 */
+  phone!: string;
+}
+
 /** 切换身份请求体 */
 class SwitchIdentityDto {
   /** 目标身份ID */
@@ -114,6 +120,15 @@ export class AuthController {
     const refreshToken = await this.auth.issueRefresh(user.id); // 签发刷新令牌
     const identities = await this.identity.listUserIdentities(user.id); // 获取当前账号的所有身份
     return { accessToken, refreshToken, identities };
+  }
+
+  /**
+   * 发送手机验证码
+   */
+  @Post('auth/send-phone-code')
+  async sendPhoneCode(@Body() dto: PhoneCodeDto) {
+    await this.auth.sendPhoneCode(dto.phone);
+    return { ok: true };
   }
 
   /**
