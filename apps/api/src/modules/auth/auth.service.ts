@@ -3,7 +3,6 @@ import { PrismaClient, IdentityType } from '@prisma/client';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import Redis from 'ioredis';
-import * as https from 'https';
 import { randomUUID } from 'crypto';
 
 type AccessClaims = {
