@@ -1,7 +1,7 @@
 {
   "name": "o2o-identity-skeleton",
   "private": true,
-  "packageManager": "pnpm@9",
+  "packageManager": "pnpm@10.8.1",
   "workspaces": [
     "apps/*"
   ],
