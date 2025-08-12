@@ -15,15 +15,16 @@ enum IdentityType {
 
 model UserAccount {
   id            String   @id @default(cuid())
-  email         String   @unique
+  email         String?  @unique
   phone         String?  @unique
-  passwordHash  String
+  passwordHash  String?
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   identities Identity[]
   memberships Membership[]
+  providers  UserProvider[]
 }
 
 model Tenant {
@@ -94,4 +95,17 @@ model Membership {
 
   @@unique([userId, tenantId, roleId])
   @@index([userId, tenantId])
+}
+
+model UserProvider {
+  id        String   @id @default(cuid())
+  userId    String
+  provider  String
+  openId    String
+  unionId   String?
+  createdAt DateTime @default(now())
+
+  user UserAccount @relation(fields: [userId], references: [id])
+
+  @@unique([provider, openId])
 }

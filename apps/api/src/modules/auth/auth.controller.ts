@@ -15,6 +15,10 @@ class RefreshDto {
   refreshToken!: string;
 }
 
+class WechatLoginDto {
+  code!: string;
+}
+
 class SwitchIdentityDto {
   identityId!: string;
   tenantId?: string;
@@ -34,12 +38,29 @@ export class AuthController {
     return { accessToken, refreshToken, identities };
   }
 
+  @Post('auth/login/wechat')
+  @HttpCode(200)
+  async loginWechat(@Body() dto: WechatLoginDto) {
+    const user = await this.auth.loginWithWechat(dto.code);
+    const accessToken = await this.auth.issueAccess(user.id);
+    const refreshToken = await this.auth.issueRefresh(user.id);
+    const identities = await this.identity.listUserIdentities(user.id);
+    return { accessToken, refreshToken, identities };
+  }
+
   @Post('auth/refresh')
   @HttpCode(200)
   async refresh(@Body() dto: RefreshDto) {
     const userId = await this.auth.verifyRefresh(dto.refreshToken);
     const accessToken = await this.auth.issueAccess(userId);
     return { accessToken };
+  }
+
+  @Post('auth/logout')
+  @HttpCode(200)
+  async logout(@Body() dto: RefreshDto) {
+    await this.auth.logout(dto.refreshToken);
+    return { ok: true };
   }
 
   @UseGuards(JwtAccessGuard)

@@ -1,8 +1,10 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, IdentityType } from '@prisma/client';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import Redis from 'ioredis';
+import * as https from 'https';
+import { randomUUID } from 'crypto';
 
 type AccessClaims = {
   sub: string;
@@ -22,7 +24,9 @@ export class AuthService {
 
   async validateUser(email: string, password: string) {
     const user = await this.prisma.userAccount.findUnique({ where: { email } });
-    if (!user || !user.isActive) throw new UnauthorizedException('Invalid credentials');
+    if (!user || !user.isActive || !user.passwordHash) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
     const ok = await argon2.verify(user.passwordHash, password);
     if (!ok) throw new UnauthorizedException('Invalid credentials');
     return user;
@@ -62,7 +66,7 @@ export class AuthService {
   }
 
   async issueRefresh(userId: string) {
-    const tokenId = crypto.randomUUID();
+    const tokenId = randomUUID();
     const ttl = 60 * 60 * 24 * 14; // 14d
     await this.redis.setex(`refresh:${tokenId}`, ttl, userId);
     return tokenId;
@@ -72,5 +76,44 @@ export class AuthService {
     const userId = await this.redis.get(`refresh:${refreshToken}`);
     if (!userId) throw new UnauthorizedException('Refresh expired or revoked');
     return userId;
+  }
+
+  async logout(refreshToken: string) {
+    await this.redis.del(`refresh:${refreshToken}`);
+  }
+
+  async loginWithWechat(code: string) {
+    const appid = process.env.WECHAT_APPID;
+    const secret = process.env.WECHAT_SECRET;
+    const url =
+      `https://api.weixin.qq.com/sns/jscode2session?appid=${appid}&secret=${secret}&js_code=${code}&grant_type=authorization_code`;
+    const data: any = await new Promise((resolve, reject) => {
+      https.get(url, res => {
+        let body = '';
+        res.on('data', chunk => (body += chunk));
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(body));
+          } catch (e) {
+            reject(e);
+          }
+        });
+      }).on('error', reject);
+    });
+    if (!data.openid) throw new UnauthorizedException('Invalid wechat code');
+
+    const existing = await this.prisma.userProvider.findUnique({
+      where: { provider_openId: { provider: 'WECHAT', openId: data.openid } },
+      include: { user: true },
+    });
+    if (existing) return existing.user;
+
+    const user = await this.prisma.userAccount.create({
+      data: {
+        providers: { create: { provider: 'WECHAT', openId: data.openid, unionId: data.unionid } },
+        identities: { create: { type: IdentityType.CONSUMER } },
+      },
+    });
+    return user;
   }
 }
