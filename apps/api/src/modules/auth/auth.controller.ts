@@ -1,30 +1,55 @@
-import { Body, Controller, Get, HttpCode, Post, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, HttpCode, Post, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { JwtAccessGuard } from './guards/jwt-access.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { IdentityService } from '../identity/identity.service';
+import { IsEmail, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 
 /** 登录请求体 */
 class LoginDto {
   /** 用户邮箱 */
+  @IsEmail()
+  @IsNotEmpty()
   email!: string;
   /** 登录密码 */
+  @IsString()
+  @IsNotEmpty()
   password!: string;
+  /** 用户手机号 */
+  phone!: string;
+  /** 登录密码，可选 */
+  password?: string;
+  /** 短信验证码，可选 */
+  code?: string;
   /** 期望切换的身份ID，可选 */
+  @IsUUID()
+  @IsOptional()
   identityId?: string;
   /** 期望切换的租户ID，可选 */
+  @IsUUID()
+  @IsOptional()
   tenantId?: string;
+}
+
+/** 请求短信验证码 */
+class SmsDto {
+  /** 用户手机号 */
+  phone!: string;
 }
 
 /** 刷新/登出请求体 */
 class RefreshDto {
   /** 刷新令牌 */
+  @IsString()
+  @IsNotEmpty()
   refreshToken!: string;
 }
 
 /** 微信小程序登录请求体 */
 class WechatLoginDto {
   /** 微信登录临时code */
+  @IsString()
+  @IsNotEmpty()
   code!: string;
 }
 
@@ -37,8 +62,12 @@ class PhoneCodeDto {
 /** 切换身份请求体 */
 class SwitchIdentityDto {
   /** 目标身份ID */
+  @IsUUID()
+  @IsNotEmpty()
   identityId!: string;
   /** 目标租户ID，可选 */
+  @IsUUID()
+  @IsOptional()
   tenantId?: string;
 }
 
@@ -51,12 +80,29 @@ export class AuthController {
   constructor(private readonly auth: AuthService, private readonly identity: IdentityService) {}
 
   /**
-   * 使用账号密码登录
+   * 发送登录短信验证码
+   */
+  @Post('auth/sms')
+  @HttpCode(200)
+  async sendSms(@Body() dto: SmsDto) {
+    await this.auth.sendPhoneCode(dto.phone);
+    return { ok: true };
+  }
+
+  /**
+   * 使用手机号登录（密码或短信验证码）
    */
   @Post('auth/login')
   @HttpCode(200)
   async login(@Body() dto: LoginDto) {
-    const user = await this.auth.validateUser(dto.email, dto.password); // 校验账号密码
+    let user;
+    if (dto.password) {
+      user = await this.auth.validatePhonePassword(dto.phone, dto.password); // 校验手机号密码
+    } else if (dto.code) {
+      user = await this.auth.loginWithPhoneCode(dto.phone, dto.code); // 使用短信验证码登录或注册
+    } else {
+      throw new BadRequestException('password or code is required');
+    }
     const accessToken = await this.auth.issueAccess(user.id, dto.identityId, dto.tenantId); // 签发访问令牌
     const refreshToken = await this.auth.issueRefresh(user.id); // 签发刷新令牌
     const identities = await this.identity.listUserIdentities(user.id); // 获取当前账号的所有身份
