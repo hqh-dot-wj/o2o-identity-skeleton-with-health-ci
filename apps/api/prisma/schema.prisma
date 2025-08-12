@@ -15,8 +15,10 @@ enum IdentityType {
 
 model UserAccount {
   id            String   @id @default(cuid())
-  email         String   @unique
+  email         String?  @unique
   phone         String?  @unique
+  wechatOpenId  String?  @unique
+  wechatUnionId String?  @unique
   passwordHash  String
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
@@ -24,6 +26,7 @@ model UserAccount {
 
   identities Identity[]
   memberships Membership[]
+  refreshTokens RefreshToken[]
 }
 
 model Tenant {
@@ -94,4 +97,17 @@ model Membership {
 
   @@unique([userId, tenantId, roleId])
   @@index([userId, tenantId])
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  user UserAccount @relation(fields: [userId], references: [id])
+
+  @@index([userId])
 }
