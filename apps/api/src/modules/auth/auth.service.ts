@@ -116,6 +116,25 @@ export class AuthService {
   }
 
   /**
+   * 通过手机验证码登录或注册
+   */
+  async loginWithPhoneCode(phone: string, _code: string) {
+    let user = await this.prisma.userAccount.findUnique({ where: { phone } });
+    if (user) {
+      if (!user.isActive) throw new UnauthorizedException('Account disabled');
+      return user;
+    }
+    user = await this.prisma.userAccount.create({
+      data: {
+        phone,
+        isActive: true,
+        identities: { create: { type: IdentityType.CONSUMER } }, // 创建默认消费者身份
+      },
+    });
+    return user;
+  }
+
+  /**
    * 通过微信小程序登录或注册
    */
   async loginWithWechat(code: string) {
