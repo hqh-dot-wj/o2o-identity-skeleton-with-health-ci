@@ -55,21 +55,51 @@ export class AuthService {
    * 发送登录短信验证码（阿里云）
    */
   async sendPhoneCode(phone: string) {
+    const cooldownKey = `sms:sent:${phone}`;
+    if (await this.redis.get(cooldownKey)) {
+      throw new Error('Too many requests, please wait before requesting another code');
+    }
+
     const code = Math.floor(100000 + Math.random() * 900000).toString(); // 生成6位验证码
     await this.redis.setex(`sms:${phone}`, 300, code); // 缓存验证码5分钟
+    await this.redis.setex(cooldownKey, 60, '1'); // 60秒冷却
+
+    const required = [
+      'ALIYUN_ACCESS_KEY_ID',
+      'ALIYUN_ACCESS_KEY_SECRET',
+      'ALIYUN_SMS_SIGN',
+      'ALIYUN_SMS_TEMPLATE',
+    ] as const;
+
+    for (const key of required) {
+      if (!process.env[key]) {
+        const msg = `Environment variable ${key} is not set`;
+        if (process.env.NODE_ENV === 'development') {
+          this.logger.warn(msg);
+        } else {
+          throw new Error(msg);
+        }
+      }
+    }
+
+    // 开发模式下直接输出验证码
+    if (process.env.NODE_ENV === 'development') {
+      this.logger.log(`Dev mode SMS code for ${phone}: ${code}`);
+      return;
+    }
 
     // 构造阿里云短信API参数
     const params: Record<string, string> = {
-      AccessKeyId: process.env.ALIYUN_ACCESS_KEY_ID || '',
+      AccessKeyId: process.env.ALIYUN_ACCESS_KEY_ID!,
       Action: 'SendSms',
       Format: 'JSON',
       PhoneNumbers: phone,
       RegionId: process.env.ALIYUN_REGION || 'cn-hangzhou',
-      SignName: process.env.ALIYUN_SMS_SIGN || '',
+      SignName: process.env.ALIYUN_SMS_SIGN!,
       SignatureMethod: 'HMAC-SHA1',
       SignatureNonce: randomUUID(),
       SignatureVersion: '1.0',
-      TemplateCode: process.env.ALIYUN_SMS_TEMPLATE || '',
+      TemplateCode: process.env.ALIYUN_SMS_TEMPLATE!,
       TemplateParam: JSON.stringify({ code }),
       Timestamp: new Date().toISOString(),
       Version: '2017-05-25',
@@ -84,7 +114,7 @@ export class AuthService {
       .map((k) => `${encode(k)}=${encode(params[k])}`)
       .join('&');
     const stringToSign = `GET&${encode('/')}&${encode(canonicalized)}`;
-    const signature = createHmac('sha1', `${process.env.ALIYUN_ACCESS_KEY_SECRET || ''}&`)
+    const signature = createHmac('sha1', `${process.env.ALIYUN_ACCESS_KEY_SECRET!}&`)
       .update(stringToSign)
       .digest('base64');
     const url = `https://dysmsapi.aliyuncs.com/?Signature=${encode(signature)}&${canonicalized}`;
@@ -148,7 +178,7 @@ export class AuthService {
       where: { userId, ...(tenantId ? { tenantId } : {}) },
       include: { role: { select: { key: true } } },
     });
-    const roles = [...new Set(memberships.map((m: any) => m.role.key as string))]; // 提取角色列表
+    const roles: string[] = [...new Set(memberships.map((m: any) => m.role.key as string))]; // 提取角色列表
 
     return { current, identities, roles, tenantId };
   }
@@ -194,88 +224,6 @@ export class AuthService {
   async logout(refreshToken: string) {
     await this.redis.del(`refresh:${refreshToken}`); // 删除 Redis 中的令牌
   }
-
-  /**
-   * 发送手机验证码
-   */
-  async sendPhoneCode(phone: string) {
-    // 冷却检查，防止重复发送
-    const cooldownKey = `sms:sent:${phone}`;
-    if (await this.redis.get(cooldownKey)) {
-      throw new Error('Too many requests, please wait before requesting another code');
-    }
-
-    // 随机生成6位验证码并缓存
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    await this.redis.setex(`sms:code:${phone}`, 300, code); // 5分钟有效
-    await this.redis.setex(cooldownKey, 60, '1'); // 60秒冷却
-
-    const required = [
-      'ALIYUN_ACCESS_KEY_ID',
-      'ALIYUN_ACCESS_KEY_SECRET',
-      'ALIYUN_SMS_SIGN',
-      'ALIYUN_SMS_TEMPLATE',
-    ] as const;
-
-    for (const key of required) {
-      if (!process.env[key]) {
-        const msg = `Environment variable ${key} is not set`;
-        if (process.env.NODE_ENV === 'development') {
-          this.logger.warn(msg);
-        } else {
-          throw new Error(msg);
-        }
-      }
-    }
-
-    // 开发模式下直接输出验证码
-    if (process.env.NODE_ENV === 'development') {
-      this.logger.log(`Dev mode SMS code for ${phone}: ${code}`);
-      return;
-    }
-
-    // 调用阿里云短信服务（简化实现）
-    try {
-      const sign = process.env.ALIYUN_SMS_SIGN!;
-      const template = process.env.ALIYUN_SMS_TEMPLATE!;
-      const params = new URLSearchParams({
-        PhoneNumbers: phone,
-        SignName: sign,
-        TemplateCode: template,
-        TemplateParam: JSON.stringify({ code }),
-      });
-      const url = `https://dysmsapi.aliyuncs.com/?Action=SendSms&Version=2017-05-25&${params.toString()}`;
-      await new Promise((resolve, reject) => {
-        https
-          .get(url, res => {
-            res.on('data', () => {});
-            res.on('end', resolve);
-          })
-          .on('error', reject);
-      });
-    } catch (e) {
-      this.logger.error('Failed to send SMS', e as any);
-      throw e;
-    }
-   /**
-   * 通过手机验证码登录或注册
-   */
-  async loginWithPhoneCode(phone: string, _code: string) {
-    let user = await this.prisma.userAccount.findUnique({ where: { phone } });
-    if (user) {
-      if (!user.isActive) throw new UnauthorizedException('Account disabled');
-      return user;
-    }
-    user = await this.prisma.userAccount.create({
-      data: {
-        phone,
-        isActive: true,
-        identities: { create: { type: IdentityType.CONSUMER } }, // 创建默认消费者身份
-      },
-    });
-    return user;
-  }
-
   /**
    * 通过微信小程序登录或注册
    */
