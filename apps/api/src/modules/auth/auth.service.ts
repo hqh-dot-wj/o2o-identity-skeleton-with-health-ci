@@ -4,6 +4,8 @@ import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import Redis from 'ioredis';
 import { randomUUID } from 'crypto';
+import * as https from 'https';
+import { IncomingMessage } from 'http';
 
 type AccessClaims = {
   sub: string;
@@ -87,17 +89,19 @@ export class AuthService {
     const url =
       `https://api.weixin.qq.com/sns/jscode2session?appid=${appid}&secret=${secret}&js_code=${code}&grant_type=authorization_code`;
     const data: any = await new Promise((resolve, reject) => {
-      https.get(url, res => {
-        let body = '';
-        res.on('data', chunk => (body += chunk));
-        res.on('end', () => {
-          try {
-            resolve(JSON.parse(body));
-          } catch (e) {
-            reject(e);
-          }
-        });
-      }).on('error', reject);
+      https
+        .get(url, (res: IncomingMessage) => {
+          let body = '';
+          res.on('data', (chunk: Buffer) => (body += chunk));
+          res.on('end', () => {
+            try {
+              resolve(JSON.parse(body));
+            } catch (e) {
+              reject(e);
+            }
+          });
+        })
+        .on('error', reject);
     });
     if (!data.openid) throw new UnauthorizedException('Invalid wechat code');
 
