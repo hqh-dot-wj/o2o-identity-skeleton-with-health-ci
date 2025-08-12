@@ -3,23 +3,21 @@ import { AuthService } from './auth.service';
 import { JwtAccessGuard } from './guards/jwt-access.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { IdentityService } from '../identity/identity.service';
-import { IsEmail, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 
 /** 登录请求体 */
 class LoginDto {
-  /** 用户邮箱 */
-  @IsEmail()
-  @IsNotEmpty()
-  email!: string;
-  /** 登录密码 */
+  /** 用户手机号 */
   @IsString()
   @IsNotEmpty()
-  password!: string;
-  /** 用户手机号 */
   phone!: string;
   /** 登录密码，可选 */
+  @IsString()
+  @IsOptional()
   password?: string;
   /** 短信验证码，可选 */
+  @IsString()
+  @IsOptional()
   code?: string;
   /** 期望切换的身份ID，可选 */
   @IsUUID()
@@ -34,6 +32,8 @@ class LoginDto {
 /** 请求短信验证码 */
 class SmsDto {
   /** 用户手机号 */
+  @IsString()
+  @IsNotEmpty()
   phone!: string;
 }
 
@@ -56,6 +56,8 @@ class WechatLoginDto {
 /** 发送手机验证码请求体 */
 class PhoneCodeDto {
   /** 手机号 */
+  @IsString()
+  @IsNotEmpty()
   phone!: string;
 }
 
