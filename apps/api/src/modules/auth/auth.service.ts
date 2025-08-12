@@ -3,7 +3,7 @@ import { PrismaClient, IdentityType } from '@prisma/client';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import Redis from 'ioredis';
-import { randomUUID } from 'crypto';
+import { randomUUID, createHmac } from 'crypto';
 import * as https from 'https';
 import { IncomingMessage } from 'http';
 
@@ -37,15 +37,93 @@ export class AuthService {
   constructor(private readonly jwt: JwtService) {}
 
   /**
-   * 校验用户邮箱与密码
+   * 校验手机号与密码
    */
-  async validateUser(email: string, password: string) {
-    const user = await this.prisma.userAccount.findUnique({ where: { email } }); // 查询用户
+  async validatePhonePassword(phone: string, password: string) {
+    const user = await this.prisma.userAccount.findUnique({ where: { phone } }); // 查询用户
     if (!user || !user.isActive || !user.passwordHash) {
       throw new UnauthorizedException('Invalid credentials'); // 用户不存在或已禁用
     }
     const ok = await argon2.verify(user.passwordHash, password); // 验证密码
     if (!ok) throw new UnauthorizedException('Invalid credentials');
+    return user;
+  }
+
+  /**
+   * 发送登录短信验证码（阿里云）
+   */
+  async sendPhoneCode(phone: string) {
+    const code = Math.floor(100000 + Math.random() * 900000).toString(); // 生成6位验证码
+    await this.redis.setex(`sms:${phone}`, 300, code); // 缓存验证码5分钟
+
+    // 构造阿里云短信API参数
+    const params: Record<string, string> = {
+      AccessKeyId: process.env.ALIYUN_ACCESS_KEY_ID || '',
+      Action: 'SendSms',
+      Format: 'JSON',
+      PhoneNumbers: phone,
+      RegionId: process.env.ALIYUN_REGION || 'cn-hangzhou',
+      SignName: process.env.ALIYUN_SMS_SIGN || '',
+      SignatureMethod: 'HMAC-SHA1',
+      SignatureNonce: randomUUID(),
+      SignatureVersion: '1.0',
+      TemplateCode: process.env.ALIYUN_SMS_TEMPLATE || '',
+      TemplateParam: JSON.stringify({ code }),
+      Timestamp: new Date().toISOString(),
+      Version: '2017-05-25',
+    };
+    const encode = (str: string) =>
+      encodeURIComponent(str)
+        .replace(/\+/g, '%20')
+        .replace(/\*/g, '%2A')
+        .replace(/%7E/g, '~');
+    const canonicalized = Object.keys(params)
+      .sort()
+      .map((k) => `${encode(k)}=${encode(params[k])}`)
+      .join('&');
+    const stringToSign = `GET&${encode('/')}&${encode(canonicalized)}`;
+    const signature = createHmac('sha1', `${process.env.ALIYUN_ACCESS_KEY_SECRET || ''}&`)
+      .update(stringToSign)
+      .digest('base64');
+    const url = `https://dysmsapi.aliyuncs.com/?Signature=${encode(signature)}&${canonicalized}`;
+    await new Promise((resolve, reject) => {
+      https
+        .get(url, (res: IncomingMessage) => {
+          let body = '';
+          res.on('data', (chunk: Buffer) => (body += chunk));
+          res.on('end', () => {
+            try {
+              const data = JSON.parse(body);
+              if (data.Code && data.Code !== 'OK') {
+                reject(new Error(data.Message || data.Code));
+              } else {
+                resolve(data);
+              }
+            } catch (e) {
+              reject(e);
+            }
+          });
+        })
+        .on('error', reject);
+    });
+  }
+
+  /**
+   * 使用短信验证码登录或注册
+   */
+  async loginWithPhoneCode(phone: string, code: string) {
+    const cached = await this.redis.get(`sms:${phone}`); // 从 Redis 获取短信验证码
+    if (!cached || cached !== code) throw new UnauthorizedException('Invalid sms code');
+    let user = await this.prisma.userAccount.findUnique({ where: { phone } });
+    if (!user) {
+      user = await this.prisma.userAccount.create({
+        data: {
+          phone,
+          identities: { create: { type: IdentityType.CONSUMER } }, // 默认创建消费者身份
+        },
+      });
+    }
+    await this.redis.del(`sms:${phone}`); // 使用后删除验证码
     return user;
   }
 
