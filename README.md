@@ -17,11 +17,21 @@ pnpm -C apps/api dev
 
 ### Default seed user
 - email: `admin@example.com`
+- phone: `18800000000`
 - password: `Passw0rd!`
 - identities: CONSUMER, MERCHANT(under demo tenant), WORKER
 
+### SMS
+To enable sending login codes via Aliyun, configure environment variables:
+- `ALIYUN_ACCESS_KEY_ID`
+- `ALIYUN_ACCESS_KEY_SECRET`
+- `ALIYUN_SMS_SIGN`
+- `ALIYUN_SMS_TEMPLATE`
+
 ### API
-- `POST /auth/login { email, password, identityId?, tenantId? }`
+- `POST /auth/sms { phone }`
+- `POST /auth/login { phone, password?, code?, identityId?, tenantId? }`
+- `POST /auth/login/wechat { code }`
 - `POST /auth/refresh { refreshToken }`
 - `POST /auth/switch-identity { identityId, tenantId? }` (requires Authorization Bearer)
 - `GET /me` (requires Authorization Bearer)

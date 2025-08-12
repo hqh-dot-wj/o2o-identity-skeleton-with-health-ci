@@ -27,7 +27,7 @@ async function main() {
   const user = await prisma.userAccount.upsert({
     where: { email: 'admin@example.com' },
     update: {},
-    create: { email: 'admin@example.com', passwordHash: hash },
+    create: { email: 'admin@example.com', phone: '18800000000', passwordHash: hash },
   });
 
   const consumerId = await prisma.identity.upsert({
@@ -54,7 +54,7 @@ async function main() {
     create: { id: 'm_demo_merchant_admin', userId: user.id, tenantId: tenant.id, roleId: roleMerchantAdmin.id, defaultIdentityId: merchantId.id },
   });
 
-  console.log('Seed completed. Login with admin@example.com / Passw0rd!');
+  console.log('Seed completed. Login with 18800000000 / Passw0rd!');
 }
 
 main().catch((e) => { console.error(e); process.exit(1); }).finally(async () => { await prisma.$disconnect(); });
