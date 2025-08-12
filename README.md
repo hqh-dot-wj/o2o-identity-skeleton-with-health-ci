@@ -58,6 +58,10 @@ Or with GitHub CLI:
 gh repo create o2o-identity-skeleton --public --source=. --remote=origin --push
 ```
 
+## SMS
+
+- `ALIYUN_REGION` (optional): Region for Aliyun SMS API, defaults to `cn-hangzhou`. This must match the region configured in your Aliyun SMS account.
+
 ## Notes
 - Access token TTL = 15m. Refresh tokens are stored in Redis for 14 days and can be revoked.
 - This is intentionally a **single service**. Breaking out microservices later won't require auth rewrites.
