@@ -3,36 +3,53 @@ import { AuthService } from './auth.service';
 import { JwtAccessGuard } from './guards/jwt-access.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { IdentityService } from '../identity/identity.service';
+import { IsEmail, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 
 /** 登录请求体 */
 class LoginDto {
   /** 用户邮箱 */
+  @IsEmail()
+  @IsNotEmpty()
   email!: string;
   /** 登录密码 */
+  @IsString()
+  @IsNotEmpty()
   password!: string;
   /** 期望切换的身份ID，可选 */
+  @IsUUID()
+  @IsOptional()
   identityId?: string;
   /** 期望切换的租户ID，可选 */
+  @IsUUID()
+  @IsOptional()
   tenantId?: string;
 }
 
 /** 刷新/登出请求体 */
 class RefreshDto {
   /** 刷新令牌 */
+  @IsString()
+  @IsNotEmpty()
   refreshToken!: string;
 }
 
 /** 微信小程序登录请求体 */
 class WechatLoginDto {
   /** 微信登录临时code */
+  @IsString()
+  @IsNotEmpty()
   code!: string;
 }
 
 /** 切换身份请求体 */
 class SwitchIdentityDto {
   /** 目标身份ID */
+  @IsUUID()
+  @IsNotEmpty()
   identityId!: string;
   /** 目标租户ID，可选 */
+  @IsUUID()
+  @IsOptional()
   tenantId?: string;
 }
 
